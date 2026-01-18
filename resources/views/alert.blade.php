@@ -1,4 +1,4 @@
-@if (config('sweetalert.alwaysLoadJS') === true || Session::has('alert.config') || Session::has('alert.delete'))
+@if (Session::has('alert.config') || Session::has('alert.delete'))
     @if (config('sweetalert.animation.enable'))
         <link rel="stylesheet" href="{{ config('sweetalert.animatecss') }}">
     @endif
@@ -7,38 +7,53 @@
         <link href="https://cdn.jsdelivr.net/npm/@sweetalert2/theme-{{ config('sweetalert.theme') }}" rel="stylesheet">
     @endif
 
-    @if (config('sweetalert.neverLoadJS') === false)
+    @if (config('sweetalert.alwaysLoadJS') === false && config('sweetalert.neverLoadJS') === false)
         <script src="{{ $cdn ?? asset('vendor/sweetalert/sweetalert.all.js') }}"></script>
     @endif
+    <script>
+        // Prevent alert from showing on back button navigation
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                // Page was loaded from cache (back/forward button)
+                sessionStorage.removeItem('sweetalert_shown');
+            }
+        });
 
-    @if (Session::has('alert.delete') || Session::has('alert.config'))
-        <script>
-            document.addEventListener('click', function(event) {
-                // Check if the clicked element or its parent has the attribute
-                var target = event.target;
-                var confirmDeleteElement = target.closest('[data-confirm-delete]');
+        // Check if alert was already shown
+        const alertKey = 'sweetalert_{{ md5(json_encode(Session::get('alert.config') ?? Session::get('alert.delete')) . microtime()) }}';
+        const alertShown = sessionStorage.getItem(alertKey);
 
-                if (confirmDeleteElement) {
-                    event.preventDefault();
-                    Swal.fire({!! Session::pull('alert.delete') !!}).then(function(result) {
-                        if (result.isConfirmed) {
-                            var form = document.createElement('form');
-                            form.action = confirmDeleteElement.href;
-                            form.method = 'POST';
-                            form.innerHTML = `
-                            @csrf
-                            @method('DELETE')
-                        `;
-                            document.body.appendChild(form);
-                            form.submit();
-                        }
-                    });
-                }
-            });
+        if (!alertShown) {
+            @if (Session::has('alert.delete'))
+                document.addEventListener('click', function(event) {
+                    if (event.target.matches('[data-confirm-delete]')) {
+                        event.preventDefault();
+                        Swal.fire({!! Session::pull('alert.delete') !!}).then(function(result) {
+                            if (result.isConfirmed) {
+                                var form = document.createElement('form');
+                                form.action = event.target.href;
+                                form.method = 'POST';
+                                form.innerHTML = `
+                        @csrf
+                        @method('DELETE')
+                    `;
+                                document.body.appendChild(form);
+                                form.submit();
+                            }
+                        });
+                    }
+                });
+            @endif
 
             @if (Session::has('alert.config'))
                 Swal.fire({!! Session::pull('alert.config') !!});
+                sessionStorage.setItem(alertKey, 'true');
             @endif
-        </script>
-    @endif
+        }
+    </script>
+    @php
+        Session::forget('alert.config');
+        Session::forget('alert.delete');
+        Session::forget('alert');
+    @endphp
 @endif
